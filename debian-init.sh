@@ -97,7 +97,7 @@ EOF
 fi
 
 # Optional common tools
-apt-get install -y btop iotop iftop neovim
+apt-get install -y btop iotop iftop neovim dnsutils
 timedatectl set-timezone America/Regina
 
 # Make nvim the default for vi/vim (non-interactive)
