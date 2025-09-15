@@ -76,6 +76,19 @@ EOF
   systemctl enable --now unattended-upgrades.service || true
 fi
 
+# install common tools
+sudo apt install btop iotop iftop neovim -y
+
+sudo timedatectl set-timezone America/Regina
+
+# setup neovim as default editor for vi/vim
+sudo update-alternatives --install /usr/bin/vim vim /usr/bin/nvim 60
+sudo update-alternatives --config vim
+sudo update-alternatives --install /usr/bin/vim vim /usr/bin/nvim 60
+sudo update-alternatives --config vim
+sudo update-alternatives --install /usr/bin/vi vi /usr/bin/nvim 60
+sudo update-alternatives --config vi
+
 msg "Creating user: ${NEW_USER} and adding to sudo"
 if ! id -u "${NEW_USER}" >/dev/null 2>&1; then
   adduser --disabled-password --gecos "" "${NEW_USER}"
