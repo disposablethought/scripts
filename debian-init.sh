@@ -12,7 +12,7 @@ set -euo pipefail
 ### VARIABLES ###
 NEW_USER="mholmes"
 GITHUB_USER="disposablethought"      # pulls keys from https://github.com/<user>.keys
-SSH_ALLOWED_CIDR="10.81.0.0/24"      # desired policy when not using Tailscale
+SSH_ALLOWED_CIDR="100.81.0.0/24"      # desired policy when not using Tailscale
 ENABLE_UNATTENDED_UPGRADES="yes"
 ##################
 
