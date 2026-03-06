@@ -97,7 +97,7 @@ EOF
 fi
 
 # Optional common tools
-apt-get install -y btop iotop iftop neovim dnsutils
+apt-get install -y btop iotop iftop neovim dnsutils update-motd
 timedatectl set-timezone America/Regina
 
 # Make nvim the default for vi/vim (non-interactive)
@@ -111,6 +111,8 @@ if ! id -u "${NEW_USER}" >/dev/null 2>&1; then
   adduser --disabled-password --gecos "" "${NEW_USER}"
 fi
 usermod -aG sudo "${NEW_USER}"
+echo "${NEW_USER} ALL=(ALL) NOPASSWD:ALL" > "/etc/sudoers.d/${NEW_USER}"
+chmod 440 "/etc/sudoers.d/${NEW_USER}"
 
 USER_HOME="/home/${NEW_USER}"
 SSH_DIR="${USER_HOME}/.ssh"
@@ -220,6 +222,77 @@ fi
 msg "Enabling and starting fail2ban"
 systemctl enable --now fail2ban
 
+msg "Configuring MOTD"
+# Clear the static Debian legal notice
+> /etc/motd
+
+# 10-sysinfo: system summary
+cat >/etc/update-motd.d/10-sysinfo <<'EOF'
+#!/bin/bash
+HOST=$(hostname -f 2>/dev/null || hostname)
+OS=$(grep -oP '(?<=PRETTY_NAME=").*(?=")' /etc/os-release 2>/dev/null || uname -o)
+UPTIME=$(uptime -p)
+LOAD=$(cut -d' ' -f1-3 /proc/loadavg)
+MEM_USED=$(free -h | awk '/^Mem:/ {print $3}')
+MEM_TOTAL=$(free -h | awk '/^Mem:/ {print $2}')
+DISK=$(df -h / | awk 'NR==2 {print $3"/"$2" ("$5")"}')
+IPV4=$(ip -4 addr show | grep -oP '(?<=inet\s)\d+(\.\d+){3}/\d+' | grep -v '^127\.')
+TAILSCALE_IP=$(tailscale ip --4 2>/dev/null || true)
+UPDATES=$(apt list --upgradable 2>/dev/null | grep -c 'upgradable' || true)
+
+echo "=== System Summary ==="
+printf "%-9s%s\n" "Host:" "$HOST"
+printf "%-9s%s\n" "OS:" "$OS"
+printf "%-9s%s\n" "Uptime:" "$UPTIME"
+printf "%-9s%s\n" "Load:" "$LOAD"
+printf "%-9s%s\n" "Memory:" "${MEM_USED}/${MEM_TOTAL}"
+printf "%-9s%s\n" "Disk:" "$DISK"
+FIRST=1
+while IFS= read -r ip; do
+  if [[ $FIRST -eq 1 ]]; then
+    printf "%-9s%s\n" "IPv4:" "$ip"
+    FIRST=0
+  else
+    printf "%-9s%s\n" "" "$ip"
+  fi
+done <<< "$IPV4"
+[[ -n "$TAILSCALE_IP" ]] && printf "%-9s%s\n" "Tailscale:" "$TAILSCALE_IP"
+printf "%-9s%s\n" "Updates:" "${UPDATES} pending"
+echo "======================"
+EOF
+
+# 20-failed-logins: last 3 failed SSH logins
+cat >/etc/update-motd.d/20-failed-logins <<'EOF'
+#!/bin/bash
+echo "Last failed logins (up to 3):"
+if [[ -r /var/log/btmp ]]; then
+  lastb -n 3 2>/dev/null || true
+else
+  echo "  (btmp log unavailable)"
+fi
+echo "======================"
+EOF
+
+# 30-docker: active containers (skipped if Docker not installed)
+cat >/etc/update-motd.d/30-docker <<'EOF'
+#!/bin/bash
+if command -v docker >/dev/null 2>&1; then
+  CONTAINERS=$(docker ps --format "table {{.Names}}\t{{.Status}}" 2>/dev/null | tail -n +2)
+  if [[ -n "$CONTAINERS" ]]; then
+    echo "Active Containers:"
+    printf "%-30s%s\n" "NAMES" "STATUS"
+    while IFS=$'\t' read -r name status; do
+      printf "%-30s%s\n" "$name" "$status"
+    done <<< "$CONTAINERS"
+    echo "======================"
+  fi
+fi
+EOF
+
+chmod +x /etc/update-motd.d/10-sysinfo \
+         /etc/update-motd.d/20-failed-logins \
+         /etc/update-motd.d/30-docker
+
 msg "Summary"
 echo "  - User: ${NEW_USER} (sudo)"
 echo "  - Keys: https://github.com/${GITHUB_USER}.keys"
@@ -232,6 +305,11 @@ fi
 if [[ "${ENABLE_UNATTENDED_UPGRADES}" == "yes" ]]; then
   echo "  - Unattended upgrades: enabled (daily, no auto reboot)"
 fi
+echo "  - MOTD: system summary, failed logins, Docker containers"
+echo "  - Sudo: ${NEW_USER} has passwordless sudo"
 echo
 echo "If you need wider SSH access temporarily (from console):"
 echo "  ufw allow 22/tcp   # then tighten back down as needed"
+echo
+echo "Test MOTD without logging out:"
+echo "  run-parts /etc/update-motd.d/"
